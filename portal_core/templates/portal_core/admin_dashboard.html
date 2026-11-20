@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Admin Dashboard</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+  <nav class="navbar navbar-dark bg-dark px-4 mb-4">
+    <a class="navbar-brand" href="/dashboard/admin/">Consultancy Portal - Admin</a>
+    <div class="d-flex gap-2">
+      <a class="btn btn-outline-light btn-sm" href="/admin/">Django Admin</a>
+      <a class="btn btn-success btn-sm" href="/admin/portal_core/jobdescription/add/">+ Add Job</a>
+      <a class="btn btn-primary btn-sm" href="/admin/portal_core/jobassignment/add/">+ Assign Job</a>
+    </div>
+  </nav>
+
+  <div class="container pb-5">
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
+      <div>
+        <h3 class="mb-1">Admin Dashboard Overview</h3>
+        <p class="text-muted mb-0">All job requirements, subvendor assignments, profile quotas, and recent alerts.</p>
+      </div>
+      <div class="d-flex gap-2 mt-2 mt-md-0">
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/portal_core/jobdescription/">All JDs</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/portal_core/jobassignment/">All Assignments</a>
+        <a class="btn btn-outline-secondary btn-sm" href="/admin/portal_core/notification/">All Alerts</a>
+      </div>
+    </div>
+
+    <!-- Summary Cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+          <div class="card-body">
+            <div class="text-muted small">Total Requirements (JDs)</div>
+            <div class="fs-3 fw-bold">{{ total_jobs_count }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+          <div class="card-body">
+            <div class="text-muted small">Active Requirements</div>
+            <div class="fs-3 fw-bold text-success">{{ active_jobs_count }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <div class="card shadow-sm border-0 h-100">
+          <div class="card-body">
+            <div class="text-muted small">Total Assignments</div>
+            <div class="fs-3 fw-bold text-primary">{{ total_assignments_count }}</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-6 col-md-3">
+        <a href="#subvendor-quota-breakdown" class="text-decoration-none">
+          <div class="card shadow-sm border-primary border-opacity-50 h-100">
+            <div class="card-body">
+              <div class="text-primary small fw-semibold">Profiles Requested (Subvendors) ↗</div>
+              <div class="fs-3 fw-bold text-dark">{{ total_profiles_requested }}</div>
+              <div class="small text-muted mt-1">
+                Received from Subvendors: <strong class="text-success">{{ total_profiles_sent }}</strong>
+              </div>
+            </div>
+          </div>
+        </a>
+      </div>
+    </div>
+<!-- Assignments Overview -->
+    <!-- Jobs & Companies Overview -->
+    <div id="jobs-company-overview" class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-white py-2 px-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div class="small">
+          <strong class="fs-6 me-2">Jobs &amp; Companies Overview ({{ total_jobs_count }})</strong>
+          <span class="text-muted">Active: <strong class="text-success">{{ active_jobs_count }}</strong></span>
+        </div>
+        <a class="btn btn-success btn-sm py-0" href="/admin/portal_core/jobdescription/add/">+ Add Job</a>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Job</th>
+              <th>Company</th>
+              <th>Positions Needed</th>
+              <th>Assigned To</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in job_rows %}
+            <tr>
+              <td class="fw-semibold">{{ row.title }}</td>
+              <td>{{ row.company_name }}</td>
+              <td><span class="badge bg-secondary">{{ row.positions_needed }}</span></td>
+              <td>{{ row.assigned_summary }}</td>
+              <td>
+                {% if row.is_active %}
+                  <span class="badge bg-success">Active</span>
+                {% else %}
+                  <span class="badge bg-secondary">Inactive</span>
+                {% endif %}
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-3">No job requirements added yet.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Unique Subvendors Dropdown Breakdown (One Open at a Time) -->
+    <div id="subvendor-quota-breakdown" class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h5 class="mb-0">Subvendors Summary (Click a Subvendor)</h5>
+          <small class="text-muted">Total Assigned: <strong>{{ total_profiles_requested }}</strong> | Received: <strong class="text-success">{{ total_profiles_sent }}</strong> | Pending: <strong class="text-danger">{{ total_profiles_remaining }}</strong></small>
+        </div>
+        <a class="btn btn-outline-primary btn-sm" href="/dashboard/admin/profiles-breakdown/">Full Breakdown Page</a>
+      </div>
+      <div class="list-group list-group-flush" id="subvendorAccordion">
+        {% for g in subvendor_groups %}
+        <div class="list-group-item py-3">
+          <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
+            <button
+              class="btn btn-primary btn-sm fw-semibold"
+              type="button"
+              data-bs-toggle="collapse"
+              data-bs-target="#subvendor-dd-{{ g.subvendor_key }}"
+              aria-expanded="false"
+              aria-controls="subvendor-dd-{{ g.subvendor_key }}"
+            >
+              {{ g.subvendor_name }} ▾
+            </button>
+            <div class="d-flex flex-wrap gap-3 small">
+              <span>Assigned Jobs: <strong>{{ g.jobs_count }}</strong></span>
+              <span>Profiles Assigned: <span class="badge bg-dark">{{ g.total_assigned }}</span></span>
+              <span>Received: <span class="badge bg-success">{{ g.total_received }}</span></span>
+              <span>Pending: <span class="badge bg-warning text-dark">{{ g.total_pending }}</span></span>
+            </div>
+          </div>
+
+          <div class="collapse mt-3" id="subvendor-dd-{{ g.subvendor_key }}" data-bs-parent="#subvendorAccordion">
+            <div class="card card-body bg-light border">
+              <div class="row g-2 mb-3 text-center">
+                <div class="col-4">
+                  <div class="p-2 bg-white rounded border">
+                    <div class="small text-muted">Profiles Assigned</div>
+                    <div class="fw-bold fs-5">{{ g.total_assigned }}</div>
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="p-2 bg-white rounded border">
+                    <div class="small text-muted">How Many You Received</div>
+                    <div class="fw-bold fs-5 text-success">{{ g.total_received }}</div>
+                  </div>
+                </div>
+                <div class="col-4">
+                  <div class="p-2 bg-white rounded border">
+                    <div class="small text-muted">How Many Pending</div>
+                    <div class="fw-bold fs-5 text-danger">{{ g.total_pending }}</div>
+                  </div>
+                </div>
+              </div>
+
+              <div class="table-responsive bg-white rounded border">
+                <table class="table table-sm table-striped align-middle mb-0">
+                  <thead class="table-secondary">
+                    <tr>
+                      <th>Job</th>
+                      <th>Company</th>
+                      <th>Assigned</th>
+                      <th>Received</th>
+                      <th>Pending</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {% for item in g.items %}
+                    <tr>
+                      <td class="fw-semibold">{{ item.job_title }}</td>
+                      <td>{{ item.company_name }}</td>
+                      <td>{{ item.requested }}</td>
+                      <td class="text-success fw-semibold">{{ item.sent }}</td>
+                      <td class="text-danger fw-semibold">{{ item.remaining }}</td>
+                    </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        {% empty %}
+        <div class="list-group-item text-center text-muted py-4">No subvendors assigned yet.</div>
+        {% endfor %}
+      </div>
+    </div>
+</div>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
