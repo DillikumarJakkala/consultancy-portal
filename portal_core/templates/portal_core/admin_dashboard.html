@@ -8,10 +8,14 @@
 <body class="bg-light">
   <nav class="navbar navbar-dark bg-dark px-4 mb-4">
     <a class="navbar-brand" href="/dashboard/admin/">Consultancy Portal - Admin</a>
-    <div class="d-flex gap-2">
+    <div class="d-flex align-items-center gap-2">
       <a class="btn btn-outline-light btn-sm" href="/admin/">Django Admin</a>
       <a class="btn btn-success btn-sm" href="/admin/portal_core/jobdescription/add/">+ Add Job</a>
       <a class="btn btn-primary btn-sm" href="/admin/portal_core/jobassignment/add/">+ Assign Job</a>
+      <form method="post" action="/accounts/logout/" class="m-0">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-danger btn-sm">Logout</button>
+      </form>
     </div>
   </nav>
 
