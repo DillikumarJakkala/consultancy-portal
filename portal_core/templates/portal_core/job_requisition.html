@@ -1,0 +1,129 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Job Requisition Form</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 24px; color: #1f2937; }
+    .card { max-width: 720px; margin: 0 auto; background: #fff; padding: 24px; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); }
+    h1 { margin-top: 0; font-size: 22px; }
+    .row { margin-bottom: 14px; }
+    label { display: block; font-weight: 600; margin-bottom: 6px; font-size: 14px; }
+    input, select, textarea { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+    textarea { min-height: 140px; resize: vertical; }
+    .actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+    button { padding: 10px 16px; border: none; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 14px; }
+    .btn-primary { background: #2563eb; color: #fff; }
+    .btn-ai { background: #0f766e; color: #fff; }
+    .msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; background: #dcfce7; color: #166534; }
+    .msg-err { background: #fee2e2; color: #991b1b; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Submit Job Requisition</h1>
+
+    {% if messages %}
+      {% for message in messages %}
+        <div class="msg {% if message.tags == 'error' %}msg-err{% endif %}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+
+    <form method="post" id="requisitionForm">
+      {% csrf_token %}
+
+      <div class="row">
+        <label for="id_title">Job Title *</label>
+        <input type="text" id="id_title" name="title" required placeholder="e.g. Python Backend Developer" />
+      </div>
+
+      <div class="row">
+        <label for="id_company_name">Company / Client Name</label>
+        <input type="text" id="id_company_name" name="company_name" placeholder="e.g. Acme Corp" />
+      </div>
+
+      <div class="row">
+        <label for="id_location">Location</label>
+        <input type="text" id="id_location" name="location" placeholder="e.g. Hyderabad / Remote" />
+      </div>
+
+      <div class="row">
+        <label for="id_positions_needed">Positions Needed</label>
+        <input type="number" id="id_positions_needed" name="positions_needed" min="1" value="1" />
+      </div>
+
+      <div class="row">
+        <label for="id_experience_required">Experience Required</label>
+        <select id="id_experience_required" name="experience_required">
+          {% for val, label in experience_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="id_salary_range">Salary Range</label>
+        <select id="id_salary_range" name="salary_range">
+          {% for val, label in salary_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="id_urgency">Urgency</label>
+        <select id="id_urgency" name="urgency">
+          {% for val, label in urgency_choices %}
+            <option value="{{ val }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div class="row">
+        <label for="id_details">Job Description &amp; Requirements</label>
+        <textarea id="id_details" name="details" placeholder="Enter job description or click Generate with AI"></textarea>
+      </div>
+
+      <div class="actions">
+        <button type="button" class="btn-ai" id="aiGenerateBtn">Generate with AI</button>
+        <button type="submit" class="btn-primary">Create Job in Portal</button>
+      </div>
+    </form>
+  </div>
+
+  <script>
+    document.getElementById("aiGenerateBtn").addEventListener("click", async function () {
+      const btn = this;
+      const form = document.getElementById("requisitionForm");
+      const csrfToken = form.querySelector('input[name="csrfmiddlewaretoken"]').value;
+      const body = new URLSearchParams({
+        csrfmiddlewaretoken: csrfToken,
+        ai_generate: "1",
+        title: document.getElementById("id_title").value,
+        company_name: document.getElementById("id_company_name").value,
+        location: document.getElementById("id_location").value,
+        experience_required: document.getElementById("id_experience_required").value,
+        salary_range: document.getElementById("id_salary_range").value,
+      });
+
+      btn.disabled = true;
+      btn.textContent = "Generating...";
+      try {
+        const res = await fetch("", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: body.toString(),
+        });
+        const data = await res.json();
+        if (data.ok && data.details) {
+          document.getElementById("id_details").value = data.details;
+        }
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Generate with AI";
+      }
+    });
+  </script>
+</body>
+</html>

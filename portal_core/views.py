@@ -1,12 +1,18 @@
-from django.contrib import messages
-from django.contrib.auth import get_user_model
 import csv
+import json
+import os
+import urllib.request
+
+from django.contrib import messages
+from django.contrib.auth import get_user_model, login as auth_login
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import AuthenticationForm
 from django.db.models import Q
-from django.http import HttpResponse
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
-from .models import Candidate, JobAssignment, JobDescription, Notification
+
 from .forms import CandidateSubmissionForm
+from .models import Candidate, JobAssignment, JobDescription, Notification
 
 
 def _filtered_candidates(request):
@@ -278,6 +284,8 @@ def subvendor_dashboard_view(request):
         "total_profiles_remaining": total_profiles_remaining,
     }
     return render(request, "portal_core/subvendor_dashboard.html", context)
+
+
 @login_required
 def export_candidates_csv_view(request):
     candidates, _, _ = _filtered_candidates(request)
@@ -307,10 +315,6 @@ def role_home(request):
     return redirect("login")
 
 
-from django.contrib.auth import login as auth_login
-from django.contrib.auth.forms import AuthenticationForm
-
-
 def _redirect_by_role(user):
     if getattr(user, "is_superuser", False) or getattr(user, "role", "") == "ADMIN" or (hasattr(user, "is_admin_role") and user.is_admin_role()):
         return redirect("admin_dashboard")
@@ -328,7 +332,7 @@ PORTAL_TITLES = {
 
 def portal_login_view(request, portal_type="general"):
     if request.user.is_authenticated:
-        return _redirect_by_role(request.user)
+        return _redirect_by_role(request)
 
     form = AuthenticationForm(request, data=request.POST or None)
     if request.method == "POST" and form.is_valid():
@@ -343,3 +347,114 @@ def portal_login_view(request, portal_type="general"):
         "portal_title": PORTAL_TITLES[normalized_type],
     }
     return render(request, "registration/login.html", context)
+
+
+def _generate_ai_job_details(title: str, company_name: str, location: str, experience_label: str, salary_label: str) -> str:
+    role_title = title.strip() or "Software / Operations Role"
+    company = company_name.strip() or "Client Organization"
+    loc = location.strip() or "Hybrid / On-site"
+
+    prompt = (
+        f"Write a clear, concise job description and key required skills for '{role_title}' "
+        f"at '{company}' (Location: {loc}, Experience: {experience_label}, Compensation: {salary_label}). "
+        f"Include responsibilities and required technical/domain skills in plain text."
+    )
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        try:
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-2.5-flash:generateContent?key={gemini_key}"
+            )
+            payload = {
+                "contents": [{"parts": [{"text": prompt}]}]
+            }
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                candidates = data.get("candidates") or []
+                parts = ((candidates[0].get("content") or {}).get("parts") or []) if candidates else []
+                text = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+                if text:
+                    return text
+        except Exception:
+            pass
+
+    return (
+        f"Role Overview: {company} is hiring for {role_title} ({loc}).\n"
+        f"Experience Target: {experience_label} | Compensation Band: {salary_label}.\n"
+        f"Key Responsibilities:\n"
+        f"- Deliver day-to-day responsibilities for {role_title} with clear ownership and timely reporting.\n"
+        f"- Collaborate with team leads and stakeholders to meet delivery and quality targets.\n"
+        f"- Document workflows, resolve issues promptly, and maintain production reliability.\n"
+        f"Required Skills:\n"
+        f"- Strong fundamentals relevant to {role_title}, clear communication, and problem-solving."
+    )
+
+
+def job_requisition_view(request):
+    if request.method == "POST" and request.POST.get("ai_generate") == "1":
+        title = request.POST.get("title", "")
+        company_name = request.POST.get("company_name", "")
+        location = request.POST.get("location", "")
+        experience_required = request.POST.get("experience_required", "FRESHER_0_1")
+        salary_range = request.POST.get("salary_range", "INR_3_6_6")
+
+        exp_map = dict(JobDescription.EXPERIENCE_CHOICES)
+        sal_map = dict(JobDescription.INR_SALARY_CHOICES)
+        details_text = _generate_ai_job_details(
+            title=title,
+            company_name=company_name,
+            location=location,
+            experience_label=exp_map.get(experience_required, experience_required),
+            salary_label=sal_map.get(salary_range, salary_range),
+        )
+        return JsonResponse({"ok": True, "details": details_text})
+
+    if request.method == "POST":
+        title = request.POST.get("title", "").strip()
+        company_name = request.POST.get("company_name", "").strip()
+        location = request.POST.get("location", "").strip()
+        details = request.POST.get("details", "").strip()
+        urgency = request.POST.get("urgency", "NORMAL")
+        experience_required = request.POST.get("experience_required", "FRESHER_0_1")
+        salary_range = request.POST.get("salary_range", "INR_3_6_6")
+
+        try:
+            positions_needed = max(1, int(request.POST.get("positions_needed", 1)))
+        except (TypeError, ValueError):
+            positions_needed = 1
+
+        valid_urgencies = {k for k, _ in JobDescription.URGENCY_CHOICES}
+        valid_exps = {k for k, _ in JobDescription.EXPERIENCE_CHOICES}
+        valid_sals = {k for k, _ in JobDescription.INR_SALARY_CHOICES}
+
+        if not title:
+            messages.error(request, "Please enter a Job Title.")
+        else:
+            job = JobDescription.objects.create(
+                title=title,
+                company_name=company_name,
+                location=location,
+                details=details,
+                positions_needed=positions_needed,
+                experience_required=experience_required if experience_required in valid_exps else "FRESHER_0_1",
+                salary_range=salary_range if salary_range in valid_sals else "INR_3_6_6",
+                urgency=urgency if urgency in valid_urgencies else "NORMAL",
+                is_active=True,
+            )
+            messages.success(request, f"Job requisition '{job.title}' created and added to Admin Dashboard.")
+            return redirect("job_requisition")
+
+    context = {
+        "experience_choices": JobDescription.EXPERIENCE_CHOICES,
+        "salary_choices": JobDescription.INR_SALARY_CHOICES,
+        "urgency_choices": JobDescription.URGENCY_CHOICES,
+    }
+    return render(request, "portal_core/job_requisition.html", context)
