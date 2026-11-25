@@ -2,38 +2,37 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{{ portal_title|default:"Consultancy Portal Login" }}</title>
+  <title>{{ portal_title }}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
 </head>
 <body class="bg-light d-flex align-items-center min-vh-100">
-  <div class="container" style="max-width: 420px;">
-    <div class="card shadow-sm border-0">
-      <div class="card-body p-4">
-        {% if portal_type == 'admin' %}
-          <span class="badge bg-dark mb-2">Admin Access</span>
-        {% elif portal_type == 'partner' %}
-          <span class="badge bg-success mb-2">Sub-Vendor Partner Access</span>
-        {% endif %}
-        <h4 class="mb-3">{{ portal_title|default:"Consultancy Portal Login" }}</h4>
-        {% if form.errors %}
-          <div class="alert alert-danger py-2 small">Invalid username or password.</div>
-        {% endif %}
-        <form method="post">
-          {% csrf_token %}
-          <div class="mb-3">
-            <label class="form-label">Username</label>
-            <input type="text" name="username" class="form-control" required autofocus>
+  <div class="container">
+    <div class="row justify-content-center">
+      <div class="col-md-5">
+        <div class="card shadow-sm border-0">
+          <div class="card-body p-4">
+            <h4 class="mb-1 text-center">{{ portal_title }}</h4>
+            <p class="text-muted small text-center mb-3">Sign in to continue</p>
+
+            {% if form.errors %}
+              <div class="alert alert-danger py-2 small">
+                Invalid username or password.
+              </div>
+            {% endif %}
+
+            <form method="post">
+              {% csrf_token %}
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Username</label>
+                {{ form.username }}
+              </div>
+              <div class="mb-3">
+                <label class="form-label small fw-semibold">Password</label>
+                {{ form.password }}
+              </div>
+              <button type="submit" class="btn btn-primary w-100">Sign In</button>
+            </form>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Password</label>
-            <input type="password" name="password" class="form-control" required>
-          </div>
-          <button type="submit" class="btn btn-primary w-100">Login</button>
-        </form>
-        <div class="mt-3 pt-3 border-top text-center small">
-          <a href="{% url 'admin_login' %}" class="text-decoration-none">Admin Login</a>
-          <span class="text-muted mx-2">|</span>
-          <a href="{% url 'partner_login' %}" class="text-decoration-none">Partner Login</a>
         </div>
       </div>
     </div>
