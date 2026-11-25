@@ -50,7 +50,10 @@
       </div>
 
       <span>Logged in as <strong>{{ request.user.username }}</strong></span>
-      <a class="btn btn-outline-light btn-sm" href="/accounts/logout/">Logout</a>
+      <form method="post" action="/accounts/logout/" class="m-0">
+        {% csrf_token %}
+        <button type="submit" class="btn btn-outline-light btn-sm">Logout</button>
+      </form>
     </div>
   </nav>
 
