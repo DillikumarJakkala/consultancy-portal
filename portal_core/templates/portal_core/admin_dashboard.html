@@ -106,6 +106,7 @@
               <th>Positions Needed</th>
               <th>Assigned To</th>
               <th>Status</th>
+              <th>AI Fit</th>
             </tr>
           </thead>
           <tbody>
@@ -122,10 +123,17 @@
                   <span class="badge bg-secondary">Inactive</span>
                 {% endif %}
               </td>
+              <td>
+                <form method="post" class="m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="ai_job_id" value="{{ row.obj.pk }}">
+                  <button type="submit" class="btn btn-outline-primary btn-sm">AI Fit</button>
+                </form>
+              </td>
             </tr>
             {% empty %}
             <tr>
-              <td colspan="5" class="text-center text-muted py-3">No job requirements added yet.</td>
+              <td colspan="6" class="text-center text-muted py-3">No job requirements added yet.</td>
             </tr>
             {% endfor %}
           </tbody>

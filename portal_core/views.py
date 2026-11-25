@@ -247,9 +247,105 @@ def _screen_candidate_with_ai(candidate, job) -> str:
     )
 
 
+def _screen_job_batch_with_ai(job, candidates_list) -> str:
+    job_title = getattr(job, "title", "Job Requirement")
+    company_name = getattr(job, "company_name", "") or "Client"
+    job_details = (getattr(job, "details", "") or "").strip()
+    positions_needed = getattr(job, "positions_needed", 0) or 0
+
+    matching_candidates = [
+        c for c in candidates_list if getattr(c, "job_id", None) == getattr(job, "pk", None)
+    ]
+
+    if not matching_candidates:
+        return (
+            f"Admin AI Requirement Fit ({job_title} - {company_name}):\n"
+            f"- Open Positions: {positions_needed} | Submitted Candidates: 0\n"
+            f"- Summary: No candidate profiles submitted yet for this requirement.\n"
+            f"- Next Step: Assign or follow up with subvendors to submit matching resumes."
+        )
+
+    cand_lines = []
+    for idx, c in enumerate(matching_candidates[:10], start=1):
+        name = getattr(c, "full_name", "Candidate")
+        status_disp = c.get_status_display() if hasattr(c, "get_status_display") else getattr(c, "status", "-")
+        res_snippet = _extract_candidate_resume_text(c)[:400] or "No resume text provided"
+        cand_lines.append(f"{idx}. {name} [Status: {status_disp}] -> {res_snippet}")
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        prompt = (
+            f"You are an Admin hiring assistant evaluating a candidate batch for '{job_title}' at '{company_name}'.\n"
+            f"Positions Needed: {positions_needed}\n"
+            f"Job Details:\n{job_details[:1200] or 'Standard role requirements'}\n\n"
+            f"Submitted Candidates:\n" + "\n".join(cand_lines) + "\n\n"
+            "Provide a concise plain-text Admin batch review:\n"
+            "1) Best Matched Candidates to Shortlist First\n"
+            "2) Key Skill / Resume Gaps to Check\n"
+            "3) Recommended Admin Action"
+        )
+        try:
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-2.5-flash:generateContent?key={gemini_key}"
+            )
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                candidates_out = data.get("candidates") or []
+                parts = ((candidates_out[0].get("content") or {}).get("parts") or []) if candidates_out else []
+                text = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+                if text:
+                    return text
+        except Exception:
+            pass
+
+    jd_words = {
+        w.strip(".,()[]{}:;\"'").lower()
+        for w in f"{job_title} {job_details}".split()
+        if len(w.strip(".,()[]{}:;\"'")) >= 3
+    }
+    scored = []
+    for c in matching_candidates:
+        r_text = _extract_candidate_resume_text(c)
+        r_words = {
+            w.strip(".,()[]{}:;\"'").lower()
+            for w in r_text.split()
+            if len(w.strip(".,()[]{}:;\"'")) >= 3
+        }
+        overlap_count = len(jd_words & r_words)
+        scored.append((overlap_count, getattr(c, "full_name", "Candidate"), bool(r_text)))
+
+    scored.sort(key=lambda item: item[0], reverse=True)
+    top_names = ", ".join(f"{name} ({score} keyword hits)" for score, name, _ in scored[:3])
+    missing_resume_count = sum(1 for _, _, has_res in scored if not has_res)
+
+    return (
+        f"Admin AI Requirement Fit ({job_title} - {company_name}) [Fallback Mode]:\n"
+        f"- Open Positions: {positions_needed} | Candidates Evaluated: {len(matching_candidates)}\n"
+        f"- Top Priority Profiles: {top_names}\n"
+        f"- Profiles Without Resume Text: {missing_resume_count}\n"
+        f"- Recommended Admin Action: Shortlist top matched profiles first and verify missing resumes."
+    )
+
+
 @login_required
 def admin_dashboard_view(request):
     if request.method == "POST":
+        ai_job_id = request.POST.get("ai_job_id")
+        if ai_job_id:
+            job_obj = get_object_or_404(JobDescription, pk=ai_job_id)
+            all_job_candidates = list(Candidate.objects.select_related("job").all())
+            batch_review = _screen_job_batch_with_ai(job_obj, all_job_candidates)
+            messages.info(request, batch_review)
+            return redirect(request.get_full_path() or "admin_dashboard")
+
         screen_candidate_id = request.POST.get("screen_candidate_id")
         if screen_candidate_id:
             candidate = get_object_or_404(
