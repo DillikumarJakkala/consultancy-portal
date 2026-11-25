@@ -15,6 +15,55 @@ from .forms import CandidateSubmissionForm
 from .models import Candidate, JobAssignment, JobDescription, Notification
 
 
+DAY_URGENCY_CHOICES = [
+    ("1_DAY", "1 Day"),
+    ("2_DAYS", "2 Days"),
+    ("3_DAYS", "3 Days"),
+    ("4_DAYS", "4 Days"),
+    ("5_DAYS", "5 Days"),
+    ("6_DAYS", "6 Days"),
+    ("7_DAYS", "7 Days"),
+    ("CUSTOM_DAYS", "Custom Days (Manual)"),
+]
+
+PRESET_DAYS_MAP = {
+    "1_DAY": 1,
+    "2_DAYS": 2,
+    "3_DAYS": 3,
+    "4_DAYS": 4,
+    "5_DAYS": 5,
+    "6_DAYS": 6,
+    "7_DAYS": 7,
+}
+
+
+def _resolve_urgency_timeline(urgency_choice: str, custom_days_raw: str):
+    valid_urgencies = {k for k, _ in JobDescription.URGENCY_CHOICES}
+    choice = (urgency_choice or "3_DAYS").strip()
+
+    if choice == "CUSTOM_DAYS":
+        try:
+            days = max(1, int((custom_days_raw or "").strip()))
+        except (TypeError, ValueError):
+            days = 3
+        label = f"{days} Day" if days == 1 else f"{days} Days"
+    else:
+        days = PRESET_DAYS_MAP.get(choice, 3)
+        label = f"{days} Day" if days == 1 else f"{days} Days"
+
+    if days <= 2:
+        mapped_urgency = "URGENT"
+    elif days <= 5:
+        mapped_urgency = "HIGH"
+    else:
+        mapped_urgency = "NORMAL"
+
+    if mapped_urgency not in valid_urgencies:
+        mapped_urgency = next(iter(valid_urgencies), "NORMAL")
+
+    return choice, days, label, mapped_urgency
+
+
 def _filtered_candidates(request):
     queryset = Candidate.objects.select_related("job", "submitted_by").all()
     search = request.GET.get("search", "").strip()
@@ -349,14 +398,22 @@ def portal_login_view(request, portal_type="general"):
     return render(request, "registration/login.html", context)
 
 
-def _generate_ai_job_details(title: str, company_name: str, location: str, experience_label: str, salary_label: str) -> str:
+def _generate_ai_job_details(
+    title: str,
+    company_name: str,
+    location: str,
+    experience_label: str,
+    salary_label: str,
+    urgency_label: str,
+) -> str:
     role_title = title.strip() or "Software / Operations Role"
     company = company_name.strip() or "Client Organization"
     loc = location.strip() or "Hybrid / On-site"
 
     prompt = (
         f"Write a clear, concise job description and key required skills for '{role_title}' "
-        f"at '{company}' (Location: {loc}, Experience: {experience_label}, Compensation: {salary_label}). "
+        f"at '{company}' (Location: {loc}, Experience: {experience_label}, "
+        f"Compensation: {salary_label}, Hiring Timeline: {urgency_label}). "
         f"Include responsibilities and required technical/domain skills in plain text."
     )
 
@@ -388,7 +445,7 @@ def _generate_ai_job_details(title: str, company_name: str, location: str, exper
 
     return (
         f"Role Overview: {company} is hiring for {role_title} ({loc}).\n"
-        f"Experience Target: {experience_label} | Compensation Band: {salary_label}.\n"
+        f"Hiring Timeline: {urgency_label} | Experience Target: {experience_label} | Compensation Band: {salary_label}.\n"
         f"Key Responsibilities:\n"
         f"- Deliver day-to-day responsibilities for {role_title} with clear ownership and timely reporting.\n"
         f"- Collaborate with team leads and stakeholders to meet delivery and quality targets.\n"
@@ -399,21 +456,29 @@ def _generate_ai_job_details(title: str, company_name: str, location: str, exper
 
 
 def job_requisition_view(request):
+    selected_urgency_choice = "3_DAYS"
+    selected_custom_days = ""
+
     if request.method == "POST" and request.POST.get("ai_generate") == "1":
         title = request.POST.get("title", "")
         company_name = request.POST.get("company_name", "")
         location = request.POST.get("location", "")
         experience_required = request.POST.get("experience_required", "FRESHER_0_1")
         salary_range = request.POST.get("salary_range", "INR_3_6_6")
+        urgency_choice = request.POST.get("urgency", "3_DAYS")
+        custom_days_raw = request.POST.get("custom_urgency_days", "")
 
         exp_map = dict(JobDescription.EXPERIENCE_CHOICES)
         sal_map = dict(JobDescription.INR_SALARY_CHOICES)
+        _, _, urgency_label, _ = _resolve_urgency_timeline(urgency_choice, custom_days_raw)
+
         details_text = _generate_ai_job_details(
             title=title,
             company_name=company_name,
             location=location,
             experience_label=exp_map.get(experience_required, experience_required),
             salary_label=sal_map.get(salary_range, salary_range),
+            urgency_label=urgency_label,
         )
         return JsonResponse({"ok": True, "details": details_text})
 
@@ -422,7 +487,8 @@ def job_requisition_view(request):
         company_name = request.POST.get("company_name", "").strip()
         location = request.POST.get("location", "").strip()
         details = request.POST.get("details", "").strip()
-        urgency = request.POST.get("urgency", "NORMAL")
+        selected_urgency_choice = request.POST.get("urgency", "3_DAYS")
+        selected_custom_days = request.POST.get("custom_urgency_days", "").strip()
         experience_required = request.POST.get("experience_required", "FRESHER_0_1")
         salary_range = request.POST.get("salary_range", "INR_3_6_6")
 
@@ -431,30 +497,46 @@ def job_requisition_view(request):
         except (TypeError, ValueError):
             positions_needed = 1
 
-        valid_urgencies = {k for k, _ in JobDescription.URGENCY_CHOICES}
         valid_exps = {k for k, _ in JobDescription.EXPERIENCE_CHOICES}
         valid_sals = {k for k, _ in JobDescription.INR_SALARY_CHOICES}
+        _, _, urgency_label, mapped_urgency = _resolve_urgency_timeline(
+            selected_urgency_choice, selected_custom_days
+        )
 
         if not title:
             messages.error(request, "Please enter a Job Title.")
         else:
+            timeline_line = f"Timeline / Urgency: {urgency_label}"
+            final_details = details
+            if timeline_line not in final_details:
+                final_details = (
+                    f"{timeline_line}\n\n{final_details}".strip()
+                    if final_details
+                    else timeline_line
+                )
+
             job = JobDescription.objects.create(
                 title=title,
                 company_name=company_name,
                 location=location,
-                details=details,
+                details=final_details,
                 positions_needed=positions_needed,
                 experience_required=experience_required if experience_required in valid_exps else "FRESHER_0_1",
                 salary_range=salary_range if salary_range in valid_sals else "INR_3_6_6",
-                urgency=urgency if urgency in valid_urgencies else "NORMAL",
+                urgency=mapped_urgency,
                 is_active=True,
             )
-            messages.success(request, f"Job requisition '{job.title}' created and added to Admin Dashboard.")
+            messages.success(
+                request,
+                f"Job requisition '{job.title}' ({urgency_label}) created and added to Admin Dashboard.",
+            )
             return redirect("job_requisition")
 
     context = {
         "experience_choices": JobDescription.EXPERIENCE_CHOICES,
         "salary_choices": JobDescription.INR_SALARY_CHOICES,
-        "urgency_choices": JobDescription.URGENCY_CHOICES,
+        "urgency_choices": DAY_URGENCY_CHOICES,
+        "selected_urgency_choice": selected_urgency_choice,
+        "selected_custom_days": selected_custom_days,
     }
     return render(request, "portal_core/job_requisition.html", context)

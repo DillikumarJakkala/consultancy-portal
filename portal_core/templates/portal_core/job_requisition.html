@@ -18,6 +18,7 @@
     .btn-ai { background: #0f766e; color: #fff; }
     .msg { padding: 10px 14px; border-radius: 6px; margin-bottom: 14px; background: #dcfce7; color: #166534; }
     .msg-err { background: #fee2e2; color: #991b1b; }
+    .hint { font-size: 12px; color: #4b5563; margin-top: 4px; }
   </style>
 </head>
 <body>
@@ -72,12 +73,26 @@
       </div>
 
       <div class="row">
-        <label for="id_urgency">Urgency</label>
+        <label for="id_urgency">Urgency (Days / Manual Selection)</label>
         <select id="id_urgency" name="urgency">
           {% for val, label in urgency_choices %}
-            <option value="{{ val }}">{{ label }}</option>
+            <option value="{{ val }}" {% if val == selected_urgency_choice %}selected{% endif %}>{{ label }}</option>
           {% endfor %}
         </select>
+      </div>
+
+      <div class="row" id="customDaysRow" style="display: none;">
+        <label for="id_custom_urgency_days">Manual Number of Days *</label>
+        <input
+          type="number"
+          id="id_custom_urgency_days"
+          name="custom_urgency_days"
+          min="1"
+          step="1"
+          value="{{ selected_custom_days }}"
+          placeholder="Enter number of days (e.g. 10)"
+        />
+        <div class="hint">Enter any number of days (for example: 1, 2, 5, 10, 15).</div>
       </div>
 
       <div class="row">
@@ -93,6 +108,19 @@
   </div>
 
   <script>
+    const urgencySelect = document.getElementById("id_urgency");
+    const customDaysRow = document.getElementById("customDaysRow");
+    const customDaysInput = document.getElementById("id_custom_urgency_days");
+
+    function toggleCustomDaysField() {
+      const isCustom = urgencySelect.value === "CUSTOM_DAYS";
+      customDaysRow.style.display = isCustom ? "block" : "none";
+      customDaysInput.required = isCustom;
+    }
+
+    urgencySelect.addEventListener("change", toggleCustomDaysField);
+    toggleCustomDaysField();
+
     document.getElementById("aiGenerateBtn").addEventListener("click", async function () {
       const btn = this;
       const form = document.getElementById("requisitionForm");
@@ -105,6 +133,8 @@
         location: document.getElementById("id_location").value,
         experience_required: document.getElementById("id_experience_required").value,
         salary_range: document.getElementById("id_salary_range").value,
+        urgency: urgencySelect.value,
+        custom_urgency_days: customDaysInput.value,
       });
 
       btn.disabled = true;
