@@ -157,9 +157,110 @@ def _build_unique_subvendor_groups(quota_rows):
     return list(grouped.values())
 
 
+def _extract_candidate_resume_text(candidate) -> str:
+    parts = []
+    for field_name in ("resume_text", "skills", "experience_summary", "notes", "cover_note"):
+        val = getattr(candidate, field_name, "")
+        if isinstance(val, str) and val.strip():
+            parts.append(val.strip())
+
+    resume_file = getattr(candidate, "resume", None)
+    if resume_file and getattr(resume_file, "name", ""):
+        parts.append(f"Uploaded Resume File: {resume_file.name}")
+        try:
+            if resume_file.name.lower().endswith((".txt", ".md", ".csv")):
+                with resume_file.open("rb") as f:
+                    raw = f.read(12000).decode("utf-8", errors="ignore").strip()
+                    if raw:
+                        parts.append(raw)
+        except Exception:
+            pass
+
+    return "\n".join(parts).strip()
+
+
+def _screen_candidate_with_ai(candidate, job) -> str:
+    cand_name = getattr(candidate, "full_name", "Candidate")
+    job_title = getattr(job, "title", "Assigned Role") if job else "Assigned Role"
+    job_details = (getattr(job, "details", "") or "").strip() if job else ""
+    resume_text = _extract_candidate_resume_text(candidate)
+
+    gemini_key = os.environ.get("GEMINI_API_KEY", "").strip()
+    if gemini_key:
+        prompt = (
+            f"You are a technical recruiter screening a candidate for '{job_title}'.\n"
+            f"Candidate: {cand_name}\n"
+            f"Job Requirements:\n{job_details[:1500] or 'Standard role requirements'}\n\n"
+            f"Candidate Resume / Profile Info:\n{resume_text[:2500] or 'No resume text provided'}\n\n"
+            "Return a concise plain-text review with:\n"
+            "1) Fit Score / Verdict (Strong Fit, Moderate Fit, or Low Fit)\n"
+            "2) Key Strengths / Matches\n"
+            "3) Missing Skills or Gaps to Verify\n"
+            "4) Suggested Next Step"
+        )
+        try:
+            url = (
+                "https://generativelanguage.googleapis.com/v1beta/models/"
+                f"gemini-2.5-flash:generateContent?key={gemini_key}"
+            )
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            req = urllib.request.Request(
+                url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=12) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                candidates_out = data.get("candidates") or []
+                parts = ((candidates_out[0].get("content") or {}).get("parts") or []) if candidates_out else []
+                text = "".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip()
+                if text:
+                    return text
+        except Exception:
+            pass
+
+    jd_words = {
+        w.strip(".,()[]{}:;\"'").lower()
+        for w in job_details.split()
+        if len(w.strip(".,()[]{}:;\"'")) >= 3
+    }
+    res_words = {
+        w.strip(".,()[]{}:;\"'").lower()
+        for w in resume_text.split()
+        if len(w.strip(".,()[]{}:;\"'")) >= 3
+    }
+    overlap = sorted(jd_words & res_words)[:8]
+    if not resume_text:
+        return (
+            f"Screening Summary for {cand_name} ({job_title}):\n"
+            f"- Fit Verdict: Needs Resume / Profile Details\n"
+            f"- Note: No resume text or readable resume file was found on this candidate record.\n"
+            f"- Next Step: Request an updated resume/CV before advancing interview stages."
+        )
+    match_line = ", ".join(overlap) if overlap else "General domain alignment"
+    return (
+        f"Screening Summary for {cand_name} ({job_title}):\n"
+        f"- Fit Verdict: Preliminary Review Ready (Fallback Mode)\n"
+        f"- Matched Keywords: {match_line}\n"
+        f"- Next Step: Review full resume against '{job_title}' requirements and confirm role experience."
+    )
+
+
 @login_required
 def admin_dashboard_view(request):
     if request.method == "POST":
+        screen_candidate_id = request.POST.get("screen_candidate_id")
+        if screen_candidate_id:
+            candidate = get_object_or_404(
+                Candidate.objects.select_related("job"), pk=screen_candidate_id
+            )
+            review_text = _screen_candidate_with_ai(candidate, candidate.job)
+            if request.headers.get("x-requested-with") == "XMLHttpRequest":
+                return JsonResponse({"ok": True, "candidate_id": candidate.pk, "review": review_text})
+            messages.info(request, review_text)
+            return redirect(request.get_full_path() or "admin_dashboard")
+
         candidate_id = request.POST.get("candidate_id")
         new_status = request.POST.get("status")
         valid_statuses = {key for key, _ in Candidate.STATUS_CHOICES}

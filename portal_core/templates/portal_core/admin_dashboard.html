@@ -8,7 +8,8 @@
 <body class="bg-light">
   <nav class="navbar navbar-dark bg-dark px-4 mb-4">
     <a class="navbar-brand" href="/dashboard/admin/">Consultancy Portal - Admin</a>
-    <div class="d-flex align-items-center gap-2">
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <a class="btn btn-info btn-sm text-dark fw-semibold" href="/job-requisition/">AI Job Requisition</a>
       <a class="btn btn-outline-light btn-sm" href="/admin/">Django Admin</a>
       <a class="btn btn-success btn-sm" href="/admin/portal_core/jobdescription/add/">+ Add Job</a>
       <a class="btn btn-primary btn-sm" href="/admin/portal_core/jobassignment/add/">+ Assign Job</a>
@@ -20,12 +21,23 @@
   </nav>
 
   <div class="container pb-5">
+    {% if messages %}
+      <div class="mb-4">
+        {% for message in messages %}
+          <div class="alert alert-info alert-dismissible fade show shadow-sm border-0" role="alert">
+            <div style="white-space: pre-line;">{{ message }}</div>
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+          </div>
+        {% endfor %}
+      </div>
+    {% endif %}
+
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-3">
       <div>
         <h3 class="mb-1">Admin Dashboard Overview</h3>
-        <p class="text-muted mb-0">All job requirements, subvendor assignments, profile quotas, and recent alerts.</p>
+        <p class="text-muted mb-0">All job requirements, subvendor assignments, profile quotas, candidate AI screening, and recent alerts.</p>
       </div>
-      <div class="d-flex gap-2 mt-2 mt-md-0">
+      <div class="d-flex flex-wrap gap-2 mt-2 mt-md-0">
         <a class="btn btn-outline-secondary btn-sm" href="/admin/portal_core/jobdescription/">All JDs</a>
         <a class="btn btn-outline-secondary btn-sm" href="/admin/portal_core/jobassignment/">All Assignments</a>
         <a class="btn btn-outline-secondary btn-sm" href="/admin/portal_core/notification/">All Alerts</a>
@@ -72,7 +84,7 @@
         </a>
       </div>
     </div>
-<!-- Assignments Overview -->
+
     <!-- Jobs & Companies Overview -->
     <div id="jobs-company-overview" class="card shadow-sm border-0 mb-4">
       <div class="card-header bg-white py-2 px-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
@@ -80,7 +92,10 @@
           <strong class="fs-6 me-2">Jobs &amp; Companies Overview ({{ total_jobs_count }})</strong>
           <span class="text-muted">Active: <strong class="text-success">{{ active_jobs_count }}</strong></span>
         </div>
-        <a class="btn btn-success btn-sm py-0" href="/admin/portal_core/jobdescription/add/">+ Add Job</a>
+        <div class="d-flex gap-2">
+          <a class="btn btn-outline-primary btn-sm py-0" href="/job-requisition/">AI JD Generator</a>
+          <a class="btn btn-success btn-sm py-0" href="/admin/portal_core/jobdescription/add/">+ Add Job</a>
+        </div>
       </div>
       <div class="table-responsive">
         <table class="table table-sm table-striped table-hover align-middle mb-0">
@@ -204,7 +219,72 @@
         {% endfor %}
       </div>
     </div>
-</div>
+
+    <!-- Submitted Candidates & AI Resume Screening -->
+    <div id="candidates-ai-screening" class="card shadow-sm border-0 mb-4">
+      <div class="card-header bg-white py-3 d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
+          <h5 class="mb-0">Submitted Candidates &amp; AI Screening</h5>
+          <small class="text-muted">Click <strong>AI Screen</strong> to evaluate a candidate against the role requirements.</small>
+        </div>
+        <form method="get" class="d-flex flex-wrap gap-2">
+          <input type="text" name="search" value="{{ search }}" class="form-control form-control-sm" placeholder="Search name, email, phone">
+          <select name="status" class="form-select form-select-sm" style="width: auto;">
+            <option value="">All Statuses</option>
+            {% for code, label in status_choices %}
+              <option value="{{ code }}" {% if selected_status == code %}selected{% endif %}>{{ label }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-outline-secondary btn-sm">Filter</button>
+        </form>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-sm table-striped table-hover align-middle mb-0">
+          <thead class="table-light">
+            <tr>
+              <th>Candidate</th>
+              <th>Job</th>
+              <th>Subvendor</th>
+              <th>Status</th>
+              <th>AI Screen</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in candidates %}
+            <tr>
+              <td class="fw-semibold">{{ c.full_name }}</td>
+              <td>{{ c.job.title|default:"-" }}</td>
+              <td>{{ c.submitted_by.username|default:"-" }}</td>
+              <td>
+                <form method="post" class="d-flex gap-1 m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="candidate_id" value="{{ c.pk }}">
+                  <select name="status" class="form-select form-select-sm" style="width: auto;">
+                    {% for code, label in status_choices %}
+                      <option value="{{ code }}" {% if c.status == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="submit" class="btn btn-outline-dark btn-sm">Save</button>
+                </form>
+              </td>
+              <td>
+                <form method="post" class="m-0">
+                  {% csrf_token %}
+                  <input type="hidden" name="screen_candidate_id" value="{{ c.pk }}">
+                  <button type="submit" class="btn btn-primary btn-sm">AI Screen</button>
+                </form>
+              </td>
+            </tr>
+            {% empty %}
+            <tr>
+              <td colspan="5" class="text-center text-muted py-3">No candidates found.</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
